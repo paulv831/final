@@ -11,6 +11,10 @@ COPY . /app
 # As well as pytest
 RUN pip install --no-cache-dir pytest==8.2.2 pytest-mock==3.14.0
 RUN pip install --no-cache-dir -r requirements.lock
+RUN pip install git+https://github.com/weatherapicom/python.git#egg=weatherapipython
+RUN import weatherapi
+RUN python setup.py install --user
+RUN import weatherapi
 
 # Run app.py when the container launches
 CMD ["python", "-m", "pytest", "."]

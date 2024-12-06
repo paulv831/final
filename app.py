@@ -115,41 +115,6 @@ def add_meal() -> Response:
         app.logger.error("Failed to add combatant: %s", str(e))
         return make_response(jsonify({'error': str(e)}), 500)
 
-@app.route('/api/clear-meals', methods=['DELETE'])
-def clear_catalog() -> Response:
-    """
-    Route to clear all meals (recreates the table).
-
-    Returns:
-        JSON response indicating success of the operation or error message.
-    """
-    try:
-        app.logger.info("Clearing the meals")
-        kitchen_model.clear_meals()
-        return make_response(jsonify({'status': 'success'}), 200)
-    except Exception as e:
-        app.logger.error(f"Error clearing catalog: {e}")
-        return make_response(jsonify({'error': str(e)}), 500)
-
-@app.route('/api/delete-meal/<int:meal_id>', methods=['DELETE'])
-def delete_meal(meal_id: int) -> Response:
-    """
-    Route to delete a meal by its ID. This performs a soft delete by marking it as deleted.
-
-    Path Parameter:
-        - meal_id (int): The ID of the meal to delete.
-
-    Returns:
-        JSON response indicating success of the operation or error message.
-    """
-    try:
-        app.logger.info(f"Deleting meal by ID: {meal_id}")
-
-        kitchen_model.delete_meal(meal_id)
-        return make_response(jsonify({'status': 'success'}), 200)
-    except Exception as e:
-        app.logger.error(f"Error deleting meal: {e}")
-        return make_response(jsonify({'error': str(e)}), 500)
 
 @app.route('/api/get-meal-by-id/<int:meal_id>', methods=['GET'])
 def get_meal_by_id(meal_id: int) -> Response:
@@ -290,39 +255,6 @@ def prep_combatant() -> Response:
     except Exception as e:
         app.logger.error("Failed to prepare combatants: %s", str(e))
         return make_response(jsonify({'error': str(e)}), 500)
-
-
-############################################################
-#
-# Leaderboard
-#
-############################################################
-
-
-@app.route('/api/leaderboard', methods=['GET'])
-def get_leaderboard() -> Response:
-    """
-    Route to get the leaderboard of meals sorted by wins, battles, or win percentage.
-
-    Query Parameters:
-        - sort (str): The field to sort by ('wins', 'battles', or 'win_pct'). Default is 'wins'.
-
-    Returns:
-        JSON response with a sorted leaderboard of meals.
-    Raises:
-        500 error if there is an issue generating the leaderboard.
-    """
-    try:
-        sort_by = request.args.get('sort', 'wins')  # Default sort by wins
-        app.logger.info("Generating leaderboard sorted by %s", sort_by)
-
-        leaderboard_data = kitchen_model.get_leaderboard(sort_by)
-
-        return make_response(jsonify({'status': 'success', 'leaderboard': leaderboard_data}), 200)
-    except Exception as e:
-        app.logger.error(f"Error generating leaderboard: {e}")
-        return make_response(jsonify({'error': str(e)}), 500)
-
 
 
 if __name__ == '__main__':
