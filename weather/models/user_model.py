@@ -4,7 +4,7 @@ import os
 
 from sqlalchemy.exc import IntegrityError
 
-from meal_max.db import db
+from weather.db import db
 from weather.utils.logger import configure_logger
 
 
