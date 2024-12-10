@@ -7,6 +7,7 @@ from weather.utils.weather_utils import (
     format_datetime,
     extract_sunrise_sunset
 )
+import datetime
 
 
 def test_validate_location():
