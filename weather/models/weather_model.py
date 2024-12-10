@@ -1,22 +1,12 @@
-from dataclasses import dataclass
-import logging
-import sqlite3
-import os
-from typing import Any
 import requests
-
-from weather.utils.sql_utils import get_db_connection
-from weather.utils.logger import configure_logger
-
-
-logger = logging.getLogger(__name__)
-configure_logger(logger)
+import os
+import logging
+from datetime import datetime, timedelta
 
 
-@dataclass
 class WeatherAPIModel:
     """
-    A class for interacting with the WeatherAPI.com API.
+    A class to interact with the WeatherAPI and store responses in memory.
     """
 
     BASE_URL = "http://api.weatherapi.com/v1"
@@ -27,6 +17,42 @@ class WeatherAPIModel:
             raise ValueError("API key for WeatherAPI.com is not set. Please define WEATHER_API_KEY in the .env file.")
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
+
+        # Cache to store API responses in memory
+        self.weather_cache = {}
+
+    def _store_in_cache(self, key, data):
+        """
+        Store weather data in the in-memory cache.
+
+        Args:
+            key (str): Unique key for the data (e.g., location+endpoint).
+            data (dict): Weather data to store.
+        """
+        self.weather_cache[key] = {
+            "data": data,
+            "timestamp": datetime.now()
+        }
+
+    def _get_from_cache(self, key, max_age_minutes=60):
+        """
+        Retrieve weather data from the in-memory cache if it is fresh.
+
+        Args:
+            key (str): Unique key for the data (e.g., location+endpoint).
+            max_age_minutes (int): Maximum age of cached data in minutes.
+
+        Returns:
+            dict or None: Cached weather data if available and fresh, None otherwise.
+        """
+        cached = self.weather_cache.get(key)
+        if cached:
+            if datetime.now() - cached["timestamp"] <= timedelta(minutes=max_age_minutes):
+                self.logger.info(f"Using cached data for key: {key}")
+                return cached["data"]
+            else:
+                self.logger.info(f"Cache expired for key: {key}")
+        return None
 
     def _make_request(self, endpoint, params):
         """
@@ -62,18 +88,15 @@ class WeatherAPIModel:
 
         Returns:
             dict: Current weather information.
-
-        Raises:
-            ValueError: If the location is invalid.
         """
-        if not location or not isinstance(location, str):
-            self.logger.error("Invalid location provided for current weather.")
-            raise ValueError("Location must be a non-empty string.")
-        try:
-            return self._make_request("current.json", {"q": location})
-        except RuntimeError as e:
-            self.logger.error(f"Error fetching current weather for location {location}: {e}")
-            raise
+        key = f"{location}-current"
+        cached_data = self._get_from_cache(key)
+        if cached_data:
+            return cached_data
+
+        data = self._make_request("current.json", {"q": location})
+        self._store_in_cache(key, data)
+        return data
 
     def get_forecast(self, location, days=1):
         """
@@ -81,25 +104,19 @@ class WeatherAPIModel:
 
         Args:
             location (str): Location name or coordinates.
-            days (int): Number of days to fetch the forecast for (default is 1).
+            days (int): Number of days to fetch the forecast for.
 
         Returns:
             dict: Weather forecast information.
-
-        Raises:
-            ValueError: If the location or days parameter is invalid.
         """
-        if not location or not isinstance(location, str):
-            self.logger.error("Invalid location provided for forecast.")
-            raise ValueError("Location must be a non-empty string.")
-        if not isinstance(days, int) or days < 1:
-            self.logger.error("Invalid days parameter provided for forecast.")
-            raise ValueError("Days must be a positive integer.")
-        try:
-            return self._make_request("forecast.json", {"q": location, "days": days})
-        except RuntimeError as e:
-            self.logger.error(f"Error fetching forecast for location {location}: {e}")
-            raise
+        key = f"{location}-forecast-{days}"
+        cached_data = self._get_from_cache(key)
+        if cached_data:
+            return cached_data
+
+        data = self._make_request("forecast.json", {"q": location, "days": days})
+        self._store_in_cache(key, data)
+        return data
 
     def get_timezone_info(self, location):
         """
@@ -110,18 +127,15 @@ class WeatherAPIModel:
 
         Returns:
             dict: Timezone information.
-
-        Raises:
-            ValueError: If the location is invalid.
         """
-        if not location or not isinstance(location, str):
-            self.logger.error("Invalid location provided for timezone info.")
-            raise ValueError("Location must be a non-empty string.")
-        try:
-            return self._make_request("timezone.json", {"q": location})
-        except RuntimeError as e:
-            self.logger.error(f"Error fetching timezone info for location {location}: {e}")
-            raise
+        key = f"{location}-timezone"
+        cached_data = self._get_from_cache(key)
+        if cached_data:
+            return cached_data
+
+        data = self._make_request("timezone.json", {"q": location})
+        self._store_in_cache(key, data)
+        return data
 
     def get_astronomy_info(self, location, date):
         """
@@ -133,40 +147,33 @@ class WeatherAPIModel:
 
         Returns:
             dict: Astronomy information.
-
-        Raises:
-            ValueError: If the location or date is invalid.
         """
-        if not location or not isinstance(location, str):
-            self.logger.error("Invalid location provided for astronomy info.")
-            raise ValueError("Location must be a non-empty string.")
-        if not date or not isinstance(date, str):
-            self.logger.error("Invalid date provided for astronomy info.")
-            raise ValueError("Date must be a non-empty string in YYYY-MM-DD format.")
-        try:
-            return self._make_request("astronomy.json", {"q": location, "dt": date})
-        except RuntimeError as e:
-            self.logger.error(f"Error fetching astronomy info for location {location} on date {date}: {e}")
-            raise
+        key = f"{location}-astronomy-{date}"
+        cached_data = self._get_from_cache(key)
+        if cached_data:
+            return cached_data
+
+        data = self._make_request("astronomy.json", {"q": location, "dt": date})
+        self._store_in_cache(key, data)
+        return data
 
     def get_marine_weather(self, location):
         """
-        Get marine weather information (e.g., tide heights) for a given location.
+        Get marine weather information for a given location.
 
         Args:
             location (str): Location name or coordinates.
 
         Returns:
             dict: Marine weather information.
-
-        Raises:
-            ValueError: If the location is invalid.
         """
-        if not location or not isinstance(location, str):
-            self.logger.error("Invalid location provided for marine weather.")
-            raise ValueError("Location must be a non-empty string.")
-        try:
-            return self._make_request("marine.json", {"q": location})
-        except RuntimeError as e:
-            self.logger.error(f"Error fetching marine weather for location {location}: {e}")
-            raise
+        key = f"{location}-marine"
+        cached_data = self._get_from_cache(key)
+        if cached_data:
+            return cached_data
+
+        data = self._make_request("marine.json", {"q": location})
+        self._store_in_cache(key, data)
+        return data
+
+    
