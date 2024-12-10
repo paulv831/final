@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 from weather.db import db
 from weather.utils.logger import configure_logger
-from weather.models.users import Users
-from weather.models.weather_api_model import WeatherAPIModel
+from weather.models.user_model import Users
+from weather.models.weather_model import WeatherAPIModel
 
 # Load environment variables
 load_dotenv()
