@@ -1,190 +1,196 @@
-import bcrypt
-import requests
+import os
+import logging
 from flask import Flask, jsonify, request, make_response
-from werkzeug.exceptions import BadRequest, Unauthorized
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from sqlalchemy.exc import IntegrityError
+from dotenv import load_dotenv
 
-# Initialize Flask and SQLite database
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+from weather.db import db
+from weather.utils.logger import configure_logger
+from weather.models.users import Users
+from weather.models.weather_api_model import WeatherAPIModel
 
-# Environment Variable (Replace with your WeatherAPI key)
-WEATHER_API_KEY = "f2de263826e5469e9ec205430240612"
+# Load environment variables
+load_dotenv()
 
-# User Model
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    hashed_password = db.Column(db.String(120), nullable=False)
-    salt = db.Column(db.String(120), nullable=False)
-    location = db.Column(db.String(120), nullable=False)
+# Configure logger
+logger = logging.getLogger(__name__)
+configure_logger(logger)
 
-# Initialize database
-with app.app_context():
-    db.create_all()
+# Initialize WeatherAPIModel
+weather_api = WeatherAPIModel()
 
-# Routes
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check route to verify the service is running."""
-    return jsonify({"status": "healthy"}), 200
+def create_app():
+    """
+    Factory function to create and configure the Flask application.
 
-@app.route('/api/create-account', methods=['POST'])
-def create_account():
-    """Create a new user account with a username, password, and location."""
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    location = data.get('location')
+    Returns:
+        Flask: Configured Flask app.
+    """
+    app = Flask(__name__)
 
-    if not username or not password or not location:
-        raise BadRequest("Username, password, and location are required.")
+    # Load configuration from environment
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-    # Generate a salt and hash the password
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode(), salt)
+    # Initialize database
+    db.init_app(app)
+    with app.app_context():
+        db.create_all()
 
-    # Save user to the database
-    new_user = User(username=username, hashed_password=hashed_password.decode(), salt=salt.decode(), location=location)
-    db.session.add(new_user)
-    db.session.commit()
+    ##########################################################
+    # Health Check
+    ##########################################################
 
-    return jsonify({"message": f"Account created for {username}"}), 201
+    @app.route('/api/health', methods=['GET'])
+    def health_check():
+        """
+        Health check endpoint to ensure the app is running.
 
-@app.route('/api/login', methods=['POST'])
-def login():
-    """Login route to verify the username and password."""
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
+        Returns:
+            Response: JSON with health status.
+        """
+        logger.info("Health check endpoint hit.")
+        return jsonify({"status": "healthy"}), 200
 
-    if not username or not password:
-        raise BadRequest("Username and password are required.")
+    ##########################################################
+    # User Management Endpoints
+    ##########################################################
 
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        raise Unauthorized("Invalid username or password.")
+    @app.route('/api/create-user', methods=['POST'])
+    def create_user():
+        """
+        Create a new user.
 
-    # Verify password
-    if not bcrypt.checkpw(password.encode(), user.hashed_password.encode()):
-        raise Unauthorized("Invalid username or password.")
+        Request JSON:
+            - username (str): Username.
+            - password (str): Password.
 
-    return jsonify({"message": f"Welcome back, {username}!"}), 200
+        Returns:
+            Response: JSON indicating success or error.
+        """
+        try:
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
 
-@app.route('/api/update-password', methods=['POST'])
-def update_password():
-    """Update the password for a user."""
-    data = request.get_json()
-    username = data.get('username')
-    old_password = data.get('old_password')
-    new_password = data.get('new_password')
+            if not username or not password:
+                return make_response(jsonify({"error": "Username and password are required."}), 400)
 
-    if not username or not old_password or not new_password:
-        raise BadRequest("Username, old password, and new password are required.")
+            Users.create_user(username, password)
+            return jsonify({"message": f"User {username} created successfully."}), 201
+        except IntegrityError:
+            return jsonify({"error": "Username already exists."}), 400
+        except Exception as e:
+            logger.error(f"Error creating user: {e}")
+            return jsonify({"error": "Failed to create user."}), 500
 
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        raise Unauthorized("Invalid username or password.")
+    @app.route('/api/delete-user', methods=['DELETE'])
+    def delete_user():
+        """
+        Delete a user.
 
-    # Verify old password
-    if not bcrypt.checkpw(old_password.encode(), user.hashed_password.encode()):
-        raise Unauthorized("Invalid old password.")
+        Request JSON:
+            - username (str): Username.
 
-    # Hash the new password and update it
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(new_password.encode(), salt)
+        Returns:
+            Response: JSON indicating success or error.
+        """
+        try:
+            data = request.get_json()
+            username = data.get('username')
 
-    user.hashed_password = hashed_password.decode()
-    user.salt = salt.decode()
-    db.session.commit()
+            if not username:
+                return make_response(jsonify({"error": "Username is required."}), 400)
 
-    return jsonify({"message": f"Password updated for {username}"}), 200
+            Users.delete_user(username)
+            return jsonify({"message": f"User {username} deleted successfully."}), 200
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        except Exception as e:
+            logger.error(f"Error deleting user: {e}")
+            return jsonify({"error": "Failed to delete user."}), 500
 
-# WeatherAPI Helper
-def fetch_weather_api(endpoint, params):
-    base_url = f"http://api.weatherapi.com/v1/{endpoint}.json"
-    params['key'] = WEATHER_API_KEY
-    response = requests.get(base_url, params=params)
-    response.raise_for_status()
-    return response.json()
+    ##########################################################
+    # Weather Endpoints
+    ##########################################################
 
-@app.route('/api/weather/current', methods=['GET'])
-def current_weather():
-    """Get current weather for the user's location."""
-    username = request.args.get('username')
-    user = User.query.filter_by(username=username).first()
+    @app.route('/api/weather/current', methods=['GET'])
+    def get_current_weather():
+        """
+        Get current weather for a location.
 
-    if not user:
-        raise BadRequest("User not found.")
+        Query Parameters:
+            - location (str): Location name or coordinates.
 
-    weather = fetch_weather_api("current", {"q": user.location})
-    return jsonify({
-        "location": weather['location']['name'],
-        "temperature": weather['current']['temp_c'],
-        "condition": weather['current']['condition']['text']
-    }), 200
+        Returns:
+            Response: JSON with current weather data or error.
+        """
+        try:
+            location = request.args.get('location')
+            if not location:
+                return make_response(jsonify({"error": "Location is required."}), 400)
 
-@app.route('/api/weather/timezone', methods=['GET'])
-def timezone():
-    """Get timezone information for the user's location."""
-    username = request.args.get('username')
-    user = User.query.filter_by(username=username).first()
+            weather_data = weather_api.get_current_weather(location)
+            return jsonify(weather_data), 200
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            logger.error(f"Error fetching current weather: {e}")
+            return jsonify({"error": "Failed to fetch weather data."}), 500
 
-    if not user:
-        raise BadRequest("User not found.")
+    @app.route('/api/weather/forecast', methods=['GET'])
+    def get_weather_forecast():
+        """
+        Get weather forecast for a location.
 
-    weather = fetch_weather_api("current", {"q": user.location})
-    return jsonify({
-        "timezone": weather['location']['tz_id'],
-        "local_time": weather['location']['localtime']
-    }), 200
+        Query Parameters:
+            - location (str): Location name or coordinates.
+            - days (int): Number of forecast days.
 
-@app.route('/api/weather/forecast', methods=['GET'])
-def weather_forecast():
-    """Get weather forecast for the user's location."""
-    username = request.args.get('username')
-    user = User.query.filter_by(username=username).first()
+        Returns:
+            Response: JSON with forecast data or error.
+        """
+        try:
+            location = request.args.get('location')
+            days = request.args.get('days', 1, type=int)
 
-    if not user:
-        raise BadRequest("User not found.")
+            if not location:
+                return make_response(jsonify({"error": "Location is required."}), 400)
 
-    forecast = fetch_weather_api("forecast", {"q": user.location, "days": 3})
-    return jsonify({
-        "forecast": forecast['forecast']['forecastday']
-    }), 200
+            forecast_data = weather_api.get_forecast(location, days)
+            return jsonify(forecast_data), 200
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            logger.error(f"Error fetching forecast: {e}")
+            return jsonify({"error": "Failed to fetch forecast data."}), 500
 
-@app.route('/api/weather/astro', methods=['GET'])
-def astro():
-    """Get astro information (sunrise/sunset) for the user's location."""
-    username = request.args.get('username')
-    user = User.query.filter_by(username=username).first()
+    ##########################################################
+    # Database Management
+    ##########################################################
 
-    if not user:
-        raise BadRequest("User not found.")
+    @app.route('/api/init-db', methods=['POST'])
+    def init_db():
+        """
+        Initialize or recreate the database.
 
-    forecast = fetch_weather_api("forecast", {"q": user.location, "days": 1})
-    astro_data = forecast['forecast']['forecastday'][0]['astro']
-    return jsonify({
-        "sunrise": astro_data['sunrise'],
-        "sunset": astro_data['sunset']
-    }), 200
+        WARNING: This will drop all tables and recreate them.
 
-@app.route('/api/weather/marine', methods=['GET'])
-def marine_weather():
-    """Get marine weather information for the user's location."""
-    username = request.args.get('username')
-    user = User.query.filter_by(username=username).first()
+        Returns:
+            Response: JSON indicating success or failure.
+        """
+        try:
+            with app.app_context():
+                db.drop_all()
+                db.create_all()
+            return jsonify({"message": "Database initialized successfully."}), 200
+        except Exception as e:
+            logger.error(f"Error initializing database: {e}")
+            return jsonify({"error": "Failed to initialize database."}), 500
 
-    if not user:
-        raise BadRequest("User not found.")
+    return app
 
-    marine = fetch_weather_api("marine", {"q": user.location})
-    return jsonify({
-        "marine_weather": marine.get('data', "No marine data available.")
-    }), 200
 
 if __name__ == '__main__':
+    app = create_app()
     app.run(debug=True, host='0.0.0.0', port=5000)
