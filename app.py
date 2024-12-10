@@ -165,6 +165,81 @@ def create_app():
             logger.error(f"Error fetching forecast: {e}")
             return jsonify({"error": "Failed to fetch forecast data."}), 500
 
+    @app.route('/api/weather/timezone', methods=['GET'])
+    def get_timezone_info():
+        """
+        Get timezone information for a location.
+
+        Query Parameters:
+            - location (str): Location name or coordinates.
+
+        Returns:
+            Response: JSON with timezone data or error.
+        """
+        try:
+            location = request.args.get('location')
+            if not location:
+                return make_response(jsonify({"error": "Location is required."}), 400)
+
+            timezone_data = weather_api.get_timezone_info(location)
+            return jsonify(timezone_data), 200
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            logger.error(f"Error fetching timezone info: {e}")
+            return jsonify({"error": "Failed to fetch timezone info."}), 500
+
+    @app.route('/api/weather/astronomy', methods=['GET'])
+    def get_astronomy_info():
+        """
+        Get astronomy information for a location.
+
+        Query Parameters:
+            - location (str): Location name or coordinates.
+            - date (str): Date in YYYY-MM-DD format.
+
+        Returns:
+            Response: JSON with astronomy data or error.
+        """
+        try:
+            location = request.args.get('location')
+            date = request.args.get('date')
+
+            if not location or not date:
+                return make_response(jsonify({"error": "Location and date are required."}), 400)
+
+            astronomy_data = weather_api.get_astronomy_info(location, date)
+            return jsonify(astronomy_data), 200
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            logger.error(f"Error fetching astronomy info: {e}")
+            return jsonify({"error": "Failed to fetch astronomy info."}), 500
+
+    @app.route('/api/weather/marine', methods=['GET'])
+    def get_marine_weather():
+        """
+        Get marine weather for a location.
+
+        Query Parameters:
+            - location (str): Location name or coordinates.
+
+        Returns:
+            Response: JSON with marine weather data or error.
+        """
+        try:
+            location = request.args.get('location')
+            if not location:
+                return make_response(jsonify({"error": "Location is required."}), 400)
+
+            marine_weather_data = weather_api.get_marine_weather(location)
+            return jsonify(marine_weather_data), 200
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            logger.error(f"Error fetching marine weather: {e}")
+            return jsonify({"error": "Failed to fetch marine weather."}), 500
+
     ##########################################################
     # Database Management
     ##########################################################
