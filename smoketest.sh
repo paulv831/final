@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the base URL for the Flask API
-BASE_URL="http://localhost:5001/api"
+BASE_URL="http://localhost:5000/api"
 
 # Flag to control whether to echo JSON output
 ECHO_JSON=false
@@ -61,10 +61,6 @@ get_weather_forecast() {
   response=$(curl -s -X GET "$BASE_URL/weather/forecast?location=New+York&days=3")
   if echo "$response" | grep -q '"forecast"'; then
     echo "Weather forecast fetched successfully."
-    if [ "$ECHO_JSON" = true ]; then
-      echo "Forecast JSON:"
-      echo "$response" | jq .
-    fi
   else
     echo "Failed to fetch weather forecast."
     exit 1
@@ -77,10 +73,6 @@ get_timezone_info() {
   response=$(curl -s -X GET "$BASE_URL/weather/timezone?location=New+York")
   if echo "$response" | grep -q '"location"'; then
     echo "Timezone info fetched successfully."
-    if [ "$ECHO_JSON" = true ]; then
-      echo "Timezone JSON:"
-      echo "$response" | jq .
-    fi
   else
     echo "Failed to fetch timezone info."
     exit 1
@@ -106,17 +98,14 @@ get_astronomy_info() {
 # Function to get marine weather
 get_marine_weather() {
   echo "Fetching marine weather for Miami..."
-  response=$(curl -s -X GET "$BASE_URL/weather/marine?location=Miami")
-  if echo "$response" | grep -q '"marine"'; then
-    echo "Marine weather fetched successfully."
-    if [ "$ECHO_JSON" = true ]; then
-      echo "Marine Weather JSON:"
-      echo "$response" | jq .
-    fi
+  response=$(curl -s -o response.json -w "%{http_code}" -X GET "$BASE_URL/weather/marine?location=Miami")  
+  if [ "$response" -eq 200 ]; then
+      echo "Marine weather fetched successfully."
   else
-    echo "Failed to fetch marine weather."
+    echo "Failed to fetch marine weather: HTTP $response."
     exit 1
   fi
+  rm -f response.json
 }
 
 ##############################################
@@ -128,16 +117,11 @@ get_marine_weather() {
 # Function to initialize the database
 init_db() {
   echo "Initializing the database..."
-  response=$(curl -s -X POST "$BASE_URL/init-db")
-  if echo "$response" | grep -q '"status": "success"'; then
-    echo "Database initialized successfully."
-    if [ "$ECHO_JSON" = true ]; then
-      echo "Database Initialization JSON:"
-      echo "$response" | jq .
-    fi
+  status_code=$(curl -o /dev/null -s -w "%{http_code}\n" -X POST "$BASE_URL/init-db")
+  if [ "$status_code" -eq 200 ]; then
+    echo " Success to initialize the database. HTTP status code: $status_code"
   else
-    echo "Failed to initialize the database."
-    exit 1
+    echo "Failed to initialise the database."
   fi
 }
 

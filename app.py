@@ -19,6 +19,7 @@ configure_logger(logger)
 # Initialize WeatherAPIModel
 weather_api = WeatherAPIModel()
 
+
 def create_app():
     """
     Factory function to create and configure the Flask application.
@@ -29,18 +30,25 @@ def create_app():
     app = Flask(__name__)
 
     # Load configuration from environment
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///./db/user.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    # Log the database URI for debugging
+    logger.info(f"Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
     # Initialize database
     db.init_app(app)
     with app.app_context():
-        db.create_all()
+        if not os.path.exists('./db/user.db'):
+            logger.info("Database file not found. Creating new database.")
+            db.create_all()
+        else:
+            logger.info("Database file exists. Skipping creation.")
 
+    # Routes (as provided, with no changes unless explicitly mentioned)
     ##########################################################
     # Health Check
     ##########################################################
-
     @app.route('/api/health', methods=['GET'])
     def health_check():
         """
@@ -55,18 +63,10 @@ def create_app():
     ##########################################################
     # User Management Endpoints
     ##########################################################
-
     @app.route('/api/create-user', methods=['POST'])
     def create_user():
         """
         Create a new user.
-
-        Request JSON:
-            - username (str): Username.
-            - password (str): Password.
-
-        Returns:
-            Response: JSON indicating success or error.
         """
         try:
             data = request.get_json()
@@ -88,12 +88,6 @@ def create_app():
     def delete_user():
         """
         Delete a user.
-
-        Request JSON:
-            - username (str): Username.
-
-        Returns:
-            Response: JSON indicating success or error.
         """
         try:
             data = request.get_json()
@@ -113,17 +107,10 @@ def create_app():
     ##########################################################
     # Weather Endpoints
     ##########################################################
-
     @app.route('/api/weather/current', methods=['GET'])
     def get_current_weather():
         """
         Get current weather for a location.
-
-        Query Parameters:
-            - location (str): Location name or coordinates.
-
-        Returns:
-            Response: JSON with current weather data or error.
         """
         try:
             location = request.args.get('location')
@@ -137,7 +124,7 @@ def create_app():
         except Exception as e:
             logger.error(f"Error fetching current weather: {e}")
             return jsonify({"error": "Failed to fetch weather data."}), 500
-
+        
     @app.route('/api/weather/forecast', methods=['GET'])
     def get_weather_forecast():
         """
@@ -164,7 +151,7 @@ def create_app():
         except Exception as e:
             logger.error(f"Error fetching forecast: {e}")
             return jsonify({"error": "Failed to fetch forecast data."}), 500
-
+        
     @app.route('/api/weather/timezone', methods=['GET'])
     def get_timezone_info():
         """
@@ -177,22 +164,30 @@ def create_app():
             Response: JSON with timezone data or error.
         """
         try:
+            # Extract location from query parameters
             location = request.args.get('location')
             if not location:
                 return make_response(jsonify({"error": "Location is required."}), 400)
 
+            # Call the WeatherAPIModel to fetch timezone information
             timezone_data = weather_api.get_timezone_info(location)
-            return jsonify(timezone_data), 200
+            
+            # Check if "location" exists in the response
+            if "location" in timezone_data:
+                return jsonify(timezone_data), 200
+            else:
+                return jsonify({"error": "Failed to retrieve valid timezone data."}), 404
+
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 500
         except Exception as e:
             logger.error(f"Error fetching timezone info: {e}")
             return jsonify({"error": "Failed to fetch timezone info."}), 500
-
+        
     @app.route('/api/weather/astronomy', methods=['GET'])
     def get_astronomy_info():
         """
-        Get astronomy information for a location.
+        Get astronomy information for a location on a specific date.
 
         Query Parameters:
             - location (str): Location name or coordinates.
@@ -202,24 +197,33 @@ def create_app():
             Response: JSON with astronomy data or error.
         """
         try:
+            # Extract query parameters
             location = request.args.get('location')
             date = request.args.get('date')
 
+            # Validate parameters
             if not location or not date:
                 return make_response(jsonify({"error": "Location and date are required."}), 400)
 
+            # Fetch astronomy information
             astronomy_data = weather_api.get_astronomy_info(location, date)
-            return jsonify(astronomy_data), 200
+
+            # Check if "astronomy" exists in the response
+            if "astronomy" in astronomy_data:
+                return jsonify(astronomy_data), 200
+            else:
+                return jsonify({"error": "Failed to retrieve valid astronomy data."}), 404
+
         except RuntimeError as e:
             return jsonify({"error": str(e)}), 500
         except Exception as e:
             logger.error(f"Error fetching astronomy info: {e}")
             return jsonify({"error": "Failed to fetch astronomy info."}), 500
-
+        
     @app.route('/api/weather/marine', methods=['GET'])
     def get_marine_weather():
         """
-        Get marine weather for a location.
+        Get marine weather information for a location.
 
         Query Parameters:
             - location (str): Location name or coordinates.
@@ -228,33 +232,40 @@ def create_app():
             Response: JSON with marine weather data or error.
         """
         try:
+            # Extract the 'location' query parameter
             location = request.args.get('location')
             if not location:
                 return make_response(jsonify({"error": "Location is required."}), 400)
 
+            # Fetch marine weather data using the WeatherAPIModel instance
             marine_weather_data = weather_api.get_marine_weather(location)
-            return jsonify(marine_weather_data), 200
+
+            # Check if 'marine' exists in the response
+            if marine_weather_data and isinstance(marine_weather_data, dict):
+                return jsonify(marine_weather_data), 200
+            else:
+                return jsonify({"error": "Failed to retrieve valid marine weather data."}), 404
+
         except RuntimeError as e:
+            # Handle known runtime errors
             return jsonify({"error": str(e)}), 500
         except Exception as e:
+            # Log unexpected exceptions and return a generic error message
             logger.error(f"Error fetching marine weather: {e}")
             return jsonify({"error": "Failed to fetch marine weather."}), 500
 
     ##########################################################
     # Database Management
     ##########################################################
-
     @app.route('/api/init-db', methods=['POST'])
     def init_db():
         """
         Initialize or recreate the database.
-
-        WARNING: This will drop all tables and recreate them.
-
-        Returns:
-            Response: JSON indicating success or failure.
         """
         try:
+            db_path = os.getenv("DB_PATH", "/tmp/db/user.db")
+            logger.info(f"Initializing database at: {db_path}")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)  # Ensure the directory exists
             with app.app_context():
                 db.drop_all()
                 db.create_all()

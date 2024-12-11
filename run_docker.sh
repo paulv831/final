@@ -16,12 +16,6 @@ else
   echo "Skipping Docker image build..."
 fi
 
-# Check if the database directory exists; if not, create it
-if [ ! -d "${DB_VOLUME_PATH}" ]; then
-  echo "Creating database directory at ${DB_VOLUME_PATH}..."
-  mkdir -p ${DB_VOLUME_PATH}
-fi
-
 # Stop and remove the running container if it exists
 if [ "$(docker ps -q -a -f name=${IMAGE_NAME}_container)" ]; then
     echo "Stopping running container: ${IMAGE_NAME}_container"
@@ -45,7 +39,6 @@ docker run -d \
   --name ${IMAGE_NAME}_container \
   --env-file .env \
   -p ${HOST_PORT}:${CONTAINER_PORT} \
-  -v ${DB_VOLUME_PATH}:/app/db \
   ${IMAGE_NAME}:${CONTAINER_TAG}
 
 echo "Docker container is running on port ${HOST_PORT}."

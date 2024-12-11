@@ -1,6 +1,13 @@
 #!/bin/bash
 
 # Check if the database file already exists
+
+if [ ! -d "/tmp/db" ]; then
+    echo "Creating /tmp/db directory..."
+    mkdir -p /tmp/db
+    chmod -R 777 /tmp/db
+fi
+
 if [ -f "$DB_PATH" ]; then
     echo "Recreating database at $DB_PATH."
     # Drop and recreate the tables
